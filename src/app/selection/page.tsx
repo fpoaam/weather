@@ -368,22 +368,33 @@ const weatherStations: WeatherStation[] = allowed
   }
 
   // ── Error ─────────────────────────────────────────────────────────────────────
-  if (error) {
-    return (
-      <div className={`min-h-screen ${dm ? 'bg-gray-950' : 'bg-slate-100'} flex items-center justify-center p-6`}>
-        <div className={`rounded-3xl shadow-2xl p-10 max-w-md w-full ${dm ? 'bg-gray-900 border border-gray-800' : 'bg-white'}`}>
-          <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-            <AlertCircle className="w-10 h-10 text-white" />
-          </div>
-          <h2 className={`text-2xl font-black mb-3 text-center ${dm ? 'text-gray-100' : 'text-gray-900'}`}>Access Error</h2>
-          <p className={`text-center mb-6 text-sm ${dm ? 'text-gray-400' : 'text-gray-600'}`}>{error}</p>
+  // ── Error ─────────────────────────────────────────────────────────────────────
+if (error) {
+  return (
+    <div className={`min-h-screen ${dm ? 'bg-gray-950' : 'bg-slate-100'} flex items-center justify-center p-6`}>
+      <div className={`rounded-3xl shadow-2xl p-10 max-w-md w-full ${dm ? 'bg-gray-900 border border-gray-800' : 'bg-white'}`}>
+        <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
+          <AlertCircle className="w-10 h-10 text-white" />
+        </div>
+        <h2 className={`text-2xl font-black mb-3 text-center ${dm ? 'text-gray-100' : 'text-gray-900'}`}>Access Error</h2>
+        <p className={`text-center mb-6 text-sm ${dm ? 'text-gray-400' : 'text-gray-600'}`}>{error}</p>
+        <div className="space-y-3">
           <button onClick={fetchContainers} className="w-full bg-gradient-to-r from-sky-500 to-blue-600 text-white py-3.5 px-6 rounded-xl hover:from-sky-600 hover:to-blue-700 transition-all font-bold text-sm shadow-lg flex items-center justify-center gap-2">
             <RefreshCw className="w-4 h-4" /> Try Again
           </button>
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${dm ? 'bg-red-950/50 text-red-400 border border-red-900/40 hover:bg-red-950' : 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-100'}`}
+          >
+            {loggingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+            Sign Out
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // ── Main render ───────────────────────────────────────────────────────────────
   return (

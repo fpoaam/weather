@@ -32,33 +32,29 @@ const AdminAccessManagement = () => {
 
   useEffect(() => { checkAdminAccess(); }, []);
 
-  useEffect(() => {
-    if (containers.length === 0) return;
-    // Load saved coords from DB via API
-    fetch('/api/stations')
-      .then(r => r.json())
-      .then(data => {
-        const loaded: Record<string, { lat: string; lng: string }> = {};
-        // Init all containers with empty coords
-        containers.forEach(c => { loaded[c.name] = { lat: '', lng: '' }; });
-        // Fill in saved coords from DB
-        (data.stations || []).forEach((s: any) => {
-          if (loaded[s.containerName] !== undefined) {
-            loaded[s.containerName] = {
-              lat: s.lat != null ? String(s.lat) : '',
-              lng: s.lng != null ? String(s.lng) : '',
-            };
-          }
-        });
-        setCoords(loaded);
-      })
-      .catch(() => {
-        // Fallback: init empty
-        const loaded: Record<string, { lat: string; lng: string }> = {};
-        containers.forEach(c => { loaded[c.name] = { lat: '', lng: '' }; });
-        setCoords(loaded);
+ useEffect(() => {
+  if (containers.length === 0) return;
+  fetch('/api/stations')
+    .then(r => r.json())
+    .then(data => {
+      const loaded: Record<string, { lat: string; lng: string }> = {};
+      containers.forEach(c => { loaded[c.name] = { lat: '', lng: '' }; });
+      (data.stations || []).forEach((s: any) => {
+        if (loaded[s.containerName] !== undefined) {
+          loaded[s.containerName] = {
+            lat: s.lat != null ? String(s.lat) : '',
+            lng: s.lng != null ? String(s.lng) : '',
+          };
+        }
       });
-  }, [containers]);
+      setCoords(loaded);
+    })
+    .catch(() => {
+      const loaded: Record<string, { lat: string; lng: string }> = {};
+      containers.forEach(c => { loaded[c.name] = { lat: '', lng: '' }; });
+      setCoords(loaded);
+    });
+}, [containers]);
 
   const checkAdminAccess = async () => {
     try {
@@ -95,52 +91,89 @@ const AdminAccessManagement = () => {
   };
 
   const handleSaveCoords = async (containerName: string) => {
-    const c = coords[containerName];
-    if (!c) return;
-    const lat = parseFloat(c.lat);
-    const lng = parseFloat(c.lng);
-    if (isNaN(lat) || isNaN(lng)) {
-      setError('Please enter valid latitude and longitude values.');
-      setTimeout(() => setError(null), 3000); return;
-    }
-    try {
-      const res = await fetch('/api/stations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ containerName, lat, lng }),
-      });
-      if (!res.ok) throw new Error('Failed to save');
-      setSuccessMessage(`Location saved for ${containerName}`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch {
-      setError('Failed to save location. Please try again.');
-      setTimeout(() => setError(null), 3000);
-    }
-  };
+  const c = coords[containerName];
+  if (!c) return;
+  const lat = parseFloat(c.lat);
+  const lng = parseFloat(c.lng);
+  if (isNaN(lat) || isNaN(lng)) {
+    setError('Please enter valid latitude and longitude values.');
+    setTimeout(() => setError(null), 3000);
+    return;
+  }
+  try {
+    const res = await fetch('/api/stations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ containerName, lat, lng }),
+    });
+    if (!res.ok) throw new Error('Failed to save');
+    setSuccessMessage(`Location saved for ${containerName}`);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  } catch {
+    setError('Failed to save location. Please try again.');
+    setTimeout(() => setError(null), 3000);
+  }
+};
 
   const handleGrantAccess = async (userId: string, containerName: string) => {
-    try {
-      setProcessingContainers(prev => new Set(prev).add(containerName)); setError(null);
-      const res = await fetch('/api/admin/grant-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, containerName }) });
-      if (!res.ok) throw new Error('Failed to grant access');
-      setSuccessMessage(`Access granted to ${containerName}`); setTimeout(() => setSuccessMessage(null), 3000);
-      await fetchUsers();
-      if (selectedUser?.id === userId) { const u = users.find(u => u.id === userId); if (u) setSelectedUser(u); }
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed'); setTimeout(() => setError(null), 3000); }
-    finally { setProcessingContainers(prev => { const s = new Set(prev); s.delete(containerName); return s; }); }
-  };
+  try {
+    setProcessingContainers(prev => new Set(prev).add(containerName));
+    setError(null);
+    const response = await fetch('/api/admin/grant-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, containerName }),
+    });
+    if (!response.ok) throw new Error('Failed to grant access');
+    setSuccessMessage(`Access granted to ${containerName}`);
+    setTimeout(() => setSuccessMessage(null), 3000);
 
-  const handleRevokeAccess = async (userId: string, containerName: string) => {
-    try {
-      setProcessingContainers(prev => new Set(prev).add(containerName)); setError(null);
-      const res = await fetch('/api/admin/revoke-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, containerName }) });
-      if (!res.ok) throw new Error('Failed to revoke access');
-      setSuccessMessage(`Access revoked from ${containerName}`); setTimeout(() => setSuccessMessage(null), 3000);
-      await fetchUsers();
-      if (selectedUser?.id === userId) { const u = users.find(u => u.id === userId); if (u) setSelectedUser(u); }
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed'); setTimeout(() => setError(null), 3000); }
-    finally { setProcessingContainers(prev => { const s = new Set(prev); s.delete(containerName); return s; }); }
-  };
+    // ✅ Use fresh data directly
+    const fresh = await fetch('/api/admin/users');
+    const freshData = await fresh.json();
+    const freshUsers: User[] = freshData.users;
+    setUsers(freshUsers);
+    if (selectedUser?.id === userId) {
+      const updated = freshUsers.find(u => u.id === userId);
+      if (updated) setSelectedUser(updated);
+    }
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Failed to grant access');
+    setTimeout(() => setError(null), 3000);
+  } finally {
+    setProcessingContainers(prev => { const s = new Set(prev); s.delete(containerName); return s; });
+  }
+};
+
+const handleRevokeAccess = async (userId: string, containerName: string) => {
+  try {
+    setProcessingContainers(prev => new Set(prev).add(containerName));
+    setError(null);
+    const response = await fetch('/api/admin/revoke-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, containerName }),
+    });
+    if (!response.ok) throw new Error('Failed to revoke access');
+    setSuccessMessage(`Access revoked from ${containerName}`);
+    setTimeout(() => setSuccessMessage(null), 3000);
+
+    // ✅ Use fresh data directly
+    const fresh = await fetch('/api/admin/users');
+    const freshData = await fresh.json();
+    const freshUsers: User[] = freshData.users;
+    setUsers(freshUsers);
+    if (selectedUser?.id === userId) {
+      const updated = freshUsers.find(u => u.id === userId);
+      if (updated) setSelectedUser(updated);
+    }
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Failed to revoke access');
+    setTimeout(() => setError(null), 3000);
+  } finally {
+    setProcessingContainers(prev => { const s = new Set(prev); s.delete(containerName); return s; });
+  }
+};
 
   const hasAccessToContainer = (user: User, containerName: string) =>
     user.containerAccess.some(ca => ca.containerName === containerName);
@@ -279,10 +312,10 @@ const AdminAccessManagement = () => {
                               {user.emailVerified ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                               {user.emailVerified ? 'Verified' : 'Not verified'}
                             </span>
-                            <span className={`flex items-center gap-1 ${user.isAccessGranted ? 'text-blue-400' : 'text-gray-500'}`}>
-                              {user.isAccessGranted ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                              {user.isAccessGranted ? 'Has Access' : 'No Access'}
-                            </span>
+                            <span className={`flex items-center gap-1 ${user.isAdmin || user.containerAccess.length > 0 ? 'text-blue-400' : 'text-gray-500'}`}>
+  {user.isAdmin || user.containerAccess.length > 0 ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+  {user.isAdmin || user.containerAccess.length > 0 ? 'Has Access' : 'No Access'}
+</span>
                           </div>
                         </div>
                         <span className="text-xs text-purple-400 font-semibold bg-purple-500/20 px-2 py-1 rounded-lg">
@@ -303,9 +336,13 @@ const AdminAccessManagement = () => {
                       <p className="text-purple-300 mb-3">{selectedUser.email}</p>
                       <div className="flex items-center gap-2">
                         {selectedUser.isAdmin && <span className="px-3 py-1 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-sm font-semibold rounded-full shadow-lg shadow-purple-500/30">Admin User</span>}
-                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${selectedUser.isAccessGranted ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/30' : 'bg-slate-700 text-gray-300'}`}>
-                          {selectedUser.isAccessGranted ? 'Access Granted' : 'No Access'}
-                        </span>
+                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
+  selectedUser.isAdmin || selectedUser.containerAccess.length > 0
+    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/30'
+    : 'bg-slate-700 text-gray-300'
+}`}>
+  {selectedUser.isAdmin || selectedUser.containerAccess.length > 0 ? 'Access Granted' : 'No Access'}
+</span>
                       </div>
                     </div>
                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-3">
