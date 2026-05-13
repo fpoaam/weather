@@ -282,14 +282,29 @@ const WeatherDashboard = () => {
       const data = await response.json();
       if (data.metadata?.blobInfo?.name) setCSVFileName(data.metadata.blobInfo.name);
       if (!data?.data?.length) throw new Error('No weather data found');
+      
       const processedData = data.data.map((item: any) => {
         const timeValue = item.time || item.timestamp || null;
         const parsedDate = timeValue ? parseDateTime(String(timeValue)) : null;
         return { ...item, time: parsedDate ? parsedDate.toISOString() : timeValue, _originalTime: timeValue };
       });
-      const sortedData = processedData.sort((a: WeatherDataPoint, b: WeatherDataPoint) =>
+
+      // ✅ Filter out invalid/sentinel blobs
+      const validData = processedData.filter((item: WeatherDataPoint) => {
+        const isInvalid =
+          item.tempC === -999 &&
+          item.humidity === -999 &&
+          (item.pressure === 0 || item.pressure === undefined) &&
+          (item.avgWindSpeed === 0 || item.avgWindSpeed === undefined);
+        return !isInvalid;
+      });
+
+      if (!validData.length) throw new Error('No valid weather data found');
+
+      const sortedData = validData.sort((a: WeatherDataPoint, b: WeatherDataPoint) =>
         new Date(a.time || 0).getTime() - new Date(b.time || 0).getTime()
       );
+
       setWeatherData(sortedData);
       setLastUpdate(new Date());
     } catch (err) {

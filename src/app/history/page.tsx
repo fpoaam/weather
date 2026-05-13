@@ -180,7 +180,20 @@ useEffect(() => {
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       if (!data?.data?.length) throw new Error('No weather data found');
-      const sortedData = data.data.sort((a: WeatherDataPoint, b: WeatherDataPoint) =>
+
+      // ✅ Filter out invalid/sentinel blobs
+      const validData = data.data.filter((item: WeatherDataPoint) => {
+        const isInvalid =
+          item.tempC === -999 &&
+          item.humidity === -999 &&
+          (item.pressure === 0 || item.pressure === undefined) &&
+          (item.avgWindSpeed === 0 || item.avgWindSpeed === undefined);
+        return !isInvalid;
+      });
+
+      if (!validData.length) throw new Error('No valid weather data found');
+
+      const sortedData = validData.sort((a: WeatherDataPoint, b: WeatherDataPoint) =>
         new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime()
       );
       setWeatherData(sortedData);
@@ -213,14 +226,9 @@ useEffect(() => {
   const exportToCSV = () => {
     if (filteredData.length === 0) return;
     const headers = [
-      'Time',
-      'Temperature (°C)',
-      'Humidity (%)',
-      'Solar Irradiance (W/m²)',
-      'Wind Speed (km/h)',
-      'Direction',
-      'Pressure (hPa)',
-      'Rain (mm)',
+      'Time', 'Temperature (°C)', 'Humidity (%)',
+      'Solar Irradiance (W/m²)', 'Wind Speed (km/h)',
+      'Direction', 'Pressure (hPa)', 'Rain (mm)',
     ];
     const csvContent = [
       headers.join(','),
@@ -231,7 +239,7 @@ useEffect(() => {
         row.irradiance   ?? 'N/A',
         row.avgWindSpeed ?? 'N/A',
         row.compassDir || row.direction || 'N/A',
-        getFakePressure(row.time),
+        row.pressure     ?? 'N/A', // ✅ real pressure
         getRainForTime(row.time as string).toFixed(2),
       ].join(','))
     ].join('\n');
@@ -287,13 +295,14 @@ useEffect(() => {
 
   // ← Rain column uses Open-Meteo lookup; highlights rainy rows in blue
   const columns: { key: string; label: string; render: (row: WeatherDataPoint, i: number) => React.ReactNode }[] = [
-    { key: 'time',         label: 'Time',              render: (row) => row.time ? new Date(row.time).toLocaleString() : '—' },
-    { key: 'tempC',        label: 'Temp',              render: (row) => row.tempC !== undefined ? `${row.tempC}°C` : '—' },
-    { key: 'humidity',     label: 'Humidity',          render: (row) => row.humidity !== undefined ? `${row.humidity}%` : '—' },
-    { key: 'irradiance',   label: 'Irradiance',        render: (row) => row.irradiance !== undefined ? `${row.irradiance} W/m²` : '—' },
-    { key: 'avgWindSpeed', label: 'Wind',              render: (row) => row.avgWindSpeed !== undefined ? `${row.avgWindSpeed} km/h` : '—' },
-    { key: 'compassDir',   label: 'Direction',         render: (row) => row.compassDir || (row.direction ? `${row.direction}°` : '—') },
-    { key: 'pressure',     label: 'Pressure',          render: (row) => `${getFakePressure(row.time)} hPa` },
+    { key: 'time',         label: 'Time',        render: (row) => row.time ? new Date(row.time).toLocaleString() : '—' },
+    { key: 'tempC',        label: 'Temp',        render: (row) => row.tempC !== undefined ? `${row.tempC}°C` : '—' },
+    { key: 'humidity',     label: 'Humidity',    render: (row) => row.humidity !== undefined ? `${row.humidity}%` : '—' },
+    { key: 'irradiance',   label: 'Irradiance',  render: (row) => row.irradiance !== undefined ? `${row.irradiance} W/m²` : '—' },
+    { key: 'avgWindSpeed', label: 'Wind',        render: (row) => row.avgWindSpeed !== undefined ? `${row.avgWindSpeed} km/h` : '—' },
+    { key: 'compassDir',   label: 'Direction',   render: (row) => row.compassDir || (row.direction ? `${row.direction}°` : '—') },
+    // ✅ Real pressure from blob
+    { key: 'pressure',     label: 'Pressure',    render: (row) => row.pressure !== undefined ? `${row.pressure} hPa` : '—' },
     {
       key: 'rain',
       label: 'Rain',
