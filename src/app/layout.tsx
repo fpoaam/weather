@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Taqsai",
+  title: "WeatherHub",
   description: "Weather monitoring and forcasting",
   icons: {
     icon: "/favicon1.png",        // or "/favicon.png"
