@@ -105,7 +105,7 @@ const WeatherDashboard = () => {
     const apiRain = getRainForTime(isoTime);
 
     if (fetched === apiRain) return fetched;
-    if (Math.abs(fetched - apiRain) > 3) return apiRain;
+    if (Math.abs(fetched - apiRain) > 8) return apiRain;
     if (fetched === 0 && apiRain !== 0) return apiRain;
     return fetched;
   };
