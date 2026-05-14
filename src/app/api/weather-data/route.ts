@@ -19,7 +19,7 @@ const cache: Record<string, {
   promise:   Promise<WeatherDataPoint[]> | null;
 }> = {};
 
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 30 * 1000;
 
 function isFresh(key: string): boolean {
   const entry = cache[key];
