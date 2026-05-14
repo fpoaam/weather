@@ -8,22 +8,11 @@ import { BlobServiceClient } from '@azure/storage-blob';
  * prefixes: only containers whose name starts with one of these are included.
  * If prefixes is empty / omitted, ALL containers from that account are included.
  */
-const SOURCES: {
-  envKey: string;
-  connectionIndex: 0 | 1 | 2;
-  prefixes: string[];
-}[] = [
+const SOURCES = [
   {
-    // wstation account — ws-tawyeen, ws-frc, ws-honeypark
-    envKey:          'AZURE_STORAGE_CONNECTION_STRING',
+    envKey: 'AZURE_STORAGE_CONNECTION_STRING',
     connectionIndex: 0,
-    prefixes:        ['ws-'],
-  },
-  {
-    // weatherstorage01 account — weather container
-    envKey:          'AZURE_STORAGE_CONNECTION_STRING2',
-    connectionIndex: 2,
-    prefixes:        ['weather'],   // exact name match via startsWith
+    prefixes: [], // ← empty = include ALL containers
   },
 ];
 
