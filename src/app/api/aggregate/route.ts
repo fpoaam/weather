@@ -50,7 +50,6 @@ function parseJsonBlob(content: string, blobName: string, lastModified: Date): a
       continue;
     }
 
-    // ─── Resolve timestamp (handle malformed timestamps gracefully) ───────────
     const resolvedTime = (() => {
       if (body.timestamp) {
         const t = new Date(body.timestamp);
@@ -68,9 +67,6 @@ function parseJsonBlob(content: string, blobName: string, lastModified: Date): a
     })();
 
     results.push({
-      // ─── Weather fields — supports both device formats ──────────────────────
-      // Format 1 (ws device): tempC, avgWindSpeed, direction, compassDir, etc.
-      // Format 2 (tt device): temperature, humidity, pressure, lat/lng/alt
       tempC:           body.tempC           ?? body.temperature  ?? null,
       humidity:        body.humidity        ?? null,
       pressure:        body.pressure        ?? null,
@@ -82,12 +78,10 @@ function parseJsonBlob(content: string, blobName: string, lastModified: Date): a
       latitude:        body.latitude        ?? null,
       longitude:       body.longitude       ?? null,
       altitude:        body.altitude        ?? null,
-
-      // ─── Metadata ───────────────────────────────────────────────────────────
-      time:     resolvedTime,
-      deviceId: raw.SystemProperties?.connectionDeviceId ?? null,
+      time:            resolvedTime,
+      deviceId:        raw.SystemProperties?.connectionDeviceId ?? null,
       blobName,
-      source:   'iot-hub-json',
+      source:          'iot-hub-json',
     });
   }
   return results;
@@ -125,9 +119,9 @@ async function parseCsvBlob(
 
   return [{
     ...row,
-    time:     new Date(lastModified).toISOString(),
+    time:   new Date(lastModified).toISOString(),
     blobName,
-    source:   'csv',
+    source: 'csv',
   }];
 }
 
@@ -141,7 +135,6 @@ async function runAggregation(
   try {
     const service = new AzureBlobService(containerName, connectionIndex);
 
-    // 1. Load existing aggregated.json
     let existingData: any[] = [];
     let lastProcessedBlob   = '';
 
@@ -159,7 +152,6 @@ async function runAggregation(
       }
     }
 
-    // 2. List all data blobs (CSV + JSON), exclude aggregated.json itself
     const allBlobs  = await service.listBlobs();
     const dataBlobs = allBlobs
       .filter(b =>
@@ -172,7 +164,6 @@ async function runAggregation(
 
     console.log(`📋 [aggregate] ${dataBlobs.length} data blobs (CSV + JSON) found in ${containerName}`);
 
-    // 3. Find new blobs since last run
     const lastIdx  = force ? -1 : dataBlobs.findIndex(b => b.name === lastProcessedBlob);
     const newBlobs = lastIdx === -1 ? dataBlobs : dataBlobs.slice(lastIdx + 1);
 
@@ -187,7 +178,6 @@ async function runAggregation(
       });
     }
 
-    // 4. Download + parse each new blob
     const newData: any[] = [];
 
     for (const blob of newBlobs) {
@@ -217,7 +207,6 @@ async function runAggregation(
       }
     }
 
-    // 5. Merge and save aggregated.json back into the SAME container
     const allData  = [...existingData, ...newData];
     const lastBlob = dataBlobs[dataBlobs.length - 1];
 
@@ -260,7 +249,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ validationResponse: validationCode });
   }
 
-  const container = request.nextUrl.searchParams.get('container') || 'ws-tawyeen';
+  const container = request.nextUrl.searchParams.get('container') || 'weather';
   const rawIndex  = parseInt(request.nextUrl.searchParams.get('index') || '0');
   const index     = ([0, 1, 2].includes(rawIndex) ? rawIndex : 0) as 0 | 1 | 2;
   const force     = request.nextUrl.searchParams.get('force') === 'true';
@@ -272,15 +261,36 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
 
-  if (Array.isArray(body)) {
-    const ev = body.find((e: any) => e.eventType === 'Microsoft.EventGrid.SubscriptionValidationEvent');
-    if (ev) return NextResponse.json({ validationResponse: ev.data.validationCode });
+  const events = Array.isArray(body) ? body : [body];
+
+  const validationEvent = events.find((e: any) =>
+    e.eventType === 'Microsoft.EventGrid.SubscriptionValidationEvent'
+  );
+  if (validationEvent) {
+    return NextResponse.json({ validationResponse: validationEvent.data.validationCode });
   }
 
-  const container = body.containerName   || 'ws-tawyeen';
-  const rawIndex  = body.connectionIndex ?? 0;
-  const index     = ([0, 1, 2].includes(rawIndex) ? rawIndex : 0) as 0 | 1 | 2;
-  const force     = body.force === true;
+  const blobEvent = events.find((e: any) =>
+    e.eventType === 'Microsoft.Storage.BlobCreated'
+  );
+
+  let container: string;
+  let index: 0 | 1 | 2;
+  let force: boolean;
+
+  if (blobEvent) {
+    const url: string = blobEvent.data?.url || '';
+    const parts = new URL(url).pathname.split('/');
+    container = parts[1];
+    index     = 0;
+    force     = false;
+    console.log(`📦 [aggregate] Event Grid triggered — container: ${container}`);
+  } else {
+    container = body.containerName   || 'weather';
+    const rawIndex = body.connectionIndex ?? 0;
+    index     = ([0, 1, 2].includes(rawIndex) ? rawIndex : 0) as 0 | 1 | 2;
+    force     = body.force === true;
+  }
 
   console.log(`🔧 [aggregate] POST — container: ${container}, index: ${index}, force: ${force}`);
   return runAggregation(container, index, force);
