@@ -231,7 +231,7 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
     const headers = [
       'Time', 'Temperature (°C)', 'Humidity (%)',
       'Solar Irradiance (W/m²)', 'Wind Speed (km/h)',
-      'Direction', 'Sea Level Pressure (hPa)', 'Rain (mm)',
+      'Direction', 'Pressure (hPa)', 'Rain (mm)',
     ];
     const csvContent = [
       headers.join(','),
@@ -305,7 +305,7 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
     { key: 'avgWindSpeed', label: 'Wind',        render: (row) => row.avgWindSpeed !== undefined ? `${row.avgWindSpeed} km/h` : '—' },
     { key: 'compassDir',   label: 'Direction',   render: (row) => row.compassDir || (row.direction ? `${row.direction}°` : '—') },
     // ✅ Real pressure from blob
-    { key: 'pressure', label: 'Sea Level Pressure', render: (row) => { const slp = getSeaLevelPressure(row.pressure as number | undefined); return slp !== undefined ? `${slp} hPa` : '—'; } },
+    { key: 'pressure', label: 'Pressure', render: (row) => { const slp = getSeaLevelPressure(row.pressure as number | undefined); return slp !== undefined ? `${slp} hPa` : '—'; } },
     {
       key: 'rain',
       label: 'Rain',

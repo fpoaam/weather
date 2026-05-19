@@ -26,7 +26,7 @@ interface WeatherDataPoint {
   [key: string]: string | number | undefined;
 }
 
-// ─── Sea Level Pressure helper ────────────────────────────────────────────────
+
 
 const SEA_LEVEL_OFFSET = 19.44;
 
@@ -828,7 +828,7 @@ const WeatherDashboard = () => {
             <StatCard icon={Activity}  title="Temperature"        value={latestData.tempC}          unit="°C"   gradient="from-rose-500 to-pink-500" />
             <StatCard icon={Droplets}  title="Humidity"           value={latestData.humidity}        unit="%"    gradient="from-emerald-500 to-teal-500" />
             <StatCard icon={Sun}       title="Irradiance"         value={latestData.irradiance}      unit="W/m²" gradient="from-amber-500 to-orange-500" />
-            <StatCard icon={Gauge}     title="Sea Level Pressure" value={latestSeaLevelPressure}     unit="hPa"  gradient="from-violet-500 to-purple-600" />
+            <StatCard icon={Gauge}     title="Pressure" value={latestSeaLevelPressure}     unit="hPa"  gradient="from-violet-500 to-purple-600" />
             <StatCard icon={Wind}      title="Wind Speed"         value={latestData.avgWindSpeed}    unit="km/h" gradient="from-sky-500 to-cyan-500" />
             <StatCard
               icon={CloudRain}
@@ -897,7 +897,7 @@ const WeatherDashboard = () => {
           {/* Charts row 2 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
             <ChartCard title="Solar Irradiance"    dataKey="irradiance"       color="#f59e0b" unit="W/m²" icon={Sun}   data={filteredData} gradient="from-amber-500 to-orange-500" />
-            <ChartCard title="Sea Level Pressure"  dataKey="seaLevelPressure" color="#8b5cf6" unit="hPa"  icon={Gauge} data={filteredData} gradient="from-violet-500 to-purple-600" />
+            <ChartCard title="Pressure"  dataKey="seaLevelPressure" color="#8b5cf6" unit="hPa"  icon={Gauge} data={filteredData} gradient="from-violet-500 to-purple-600" />
           </div>
 
           {/* Wind row */}
@@ -925,7 +925,7 @@ const WeatherDashboard = () => {
               <table className="min-w-full">
                 <thead>
                   <tr className={t.tableHead}>
-                    {['Time', 'Temp', 'Humidity', 'Irradiance', 'Wind', 'Direction', 'Sea Level Pressure', 'Rain'].map(h => (
+                    {['Time', 'Temp', 'Humidity', 'Irradiance', 'Wind', 'Direction', 'Pressure', 'Rain'].map(h => (
                       <th key={h} className="px-5 py-3.5 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
