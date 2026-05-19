@@ -15,10 +15,7 @@ interface WeatherDataPoint {
   [key: string]: string | number | undefined;
 }
 
-// ─── Open-Meteo rain helpers ─────────────────────────────────────────────────
 
-const STATION_LAT = 25.555582;
-const STATION_LON = 56.080717;
 
 async function fetchOpenMeteoRain(data: WeatherDataPoint[]): Promise<Map<string, number>> {
   // Find the oldest and newest timestamps in the station data
@@ -129,6 +126,12 @@ useEffect(() => {
     return rainMap.get(snapTo15Min(date)) ?? 0;
   };
 
+  const SEA_LEVEL_OFFSET = 19.44;
+const getSeaLevelPressure = (pressure: number | undefined): number | undefined => {
+  if (pressure === undefined || pressure === null) return undefined;
+  return Math.round((pressure + SEA_LEVEL_OFFSET) * 100) / 100;
+};
+
   const dm = mounted && darkMode;
 
   const t = {
@@ -228,7 +231,7 @@ useEffect(() => {
     const headers = [
       'Time', 'Temperature (°C)', 'Humidity (%)',
       'Solar Irradiance (W/m²)', 'Wind Speed (km/h)',
-      'Direction', 'Pressure (hPa)', 'Rain (mm)',
+      'Direction', 'Sea Level Pressure (hPa)', 'Rain (mm)',
     ];
     const csvContent = [
       headers.join(','),
@@ -239,7 +242,7 @@ useEffect(() => {
         row.irradiance   ?? 'N/A',
         row.avgWindSpeed ?? 'N/A',
         row.compassDir || row.direction || 'N/A',
-        row.pressure     ?? 'N/A', // ✅ real pressure
+        getSeaLevelPressure(row.pressure as number | undefined) ?? 'N/A',
         getRainForTime(row.time as string).toFixed(2),
       ].join(','))
     ].join('\n');
@@ -302,7 +305,7 @@ useEffect(() => {
     { key: 'avgWindSpeed', label: 'Wind',        render: (row) => row.avgWindSpeed !== undefined ? `${row.avgWindSpeed} km/h` : '—' },
     { key: 'compassDir',   label: 'Direction',   render: (row) => row.compassDir || (row.direction ? `${row.direction}°` : '—') },
     // ✅ Real pressure from blob
-    { key: 'pressure',     label: 'Pressure',    render: (row) => row.pressure !== undefined ? `${row.pressure} hPa` : '—' },
+    { key: 'pressure', label: 'Sea Level Pressure', render: (row) => { const slp = getSeaLevelPressure(row.pressure as number | undefined); return slp !== undefined ? `${slp} hPa` : '—'; } },
     {
       key: 'rain',
       label: 'Rain',

@@ -20,10 +20,20 @@ interface WeatherDataPoint {
   tempC?: number;
   humidity?: number;
   pressure?: number;
+  seaLevelPressure?: number;
   rainRatePerHour?: number;
   openMeteoRain?: number;
   [key: string]: string | number | undefined;
 }
+
+// ─── Sea Level Pressure helper ────────────────────────────────────────────────
+
+const SEA_LEVEL_OFFSET = 19.44;
+
+const getSeaLevelPressure = (pressure: number | undefined): number | undefined => {
+  if (pressure === undefined || pressure === null) return undefined;
+  return Math.round((pressure + SEA_LEVEL_OFFSET) * 100) / 100;
+};
 
 // ─── Open-Meteo helpers ───────────────────────────────────────────────────────
 
@@ -93,13 +103,6 @@ const WeatherDashboard = () => {
     return rainMap.get(key) ?? 0;
   };
 
-  /**
-   * Smart rain selector applying 3 rules:
-   * 1. fetched === api  → use fetched
-   * 2. |fetched - api| > 3  → use api
-   * 3. fetched === 0 && api !== 0  → use api
-   * default → use fetched
-   */
   const getSmartRain = (fetchedRain: number | undefined, isoTime?: string): number => {
     const fetched = fetchedRain ?? 0;
     const apiRain = getRainForTime(isoTime);
@@ -282,14 +285,13 @@ const WeatherDashboard = () => {
       const data = await response.json();
       if (data.metadata?.blobInfo?.name) setCSVFileName(data.metadata.blobInfo.name);
       if (!data?.data?.length) throw new Error('No weather data found');
-      
+
       const processedData = data.data.map((item: any) => {
         const timeValue = item.time || item.timestamp || null;
         const parsedDate = timeValue ? parseDateTime(String(timeValue)) : null;
         return { ...item, time: parsedDate ? parsedDate.toISOString() : timeValue, _originalTime: timeValue };
       });
 
-      // ✅ Filter out invalid/sentinel blobs
       const validData = processedData.filter((item: WeatherDataPoint) => {
         const isInvalid =
           item.tempC === -999 &&
@@ -367,6 +369,7 @@ const WeatherDashboard = () => {
     const withRain = filtered.map(d => ({
       ...d,
       openMeteoRain: getSmartRain(d.rainRatePerHour as number | undefined, d.time as string),
+      seaLevelPressure: getSeaLevelPressure(d.pressure as number | undefined),
       direction: d.compassDir
         ? compassToDegrees(d.compassDir as string)
         : (d.direction ?? 0),
@@ -472,7 +475,7 @@ const WeatherDashboard = () => {
           <span className={`text-xs font-medium ${t.textMuted}`}>{unit}</span>
         </div>
       </div>
-      <div className={`h-0.5 bg-gradient-to-r ${gradient} opacity-60`}/>
+      
     </div>
   );
 
@@ -731,6 +734,7 @@ const WeatherDashboard = () => {
   const filteredData = getFilteredData();
   const latestData = weatherData[weatherData.length - 1] || {};
   const latestRain = rainLoading ? null : getSmartRain(latestData.rainRatePerHour as number | undefined, latestData.time as string);
+  const latestSeaLevelPressure = getSeaLevelPressure(latestData.pressure as number | undefined);
   const correctedDirection = latestData.compassDir
     ? compassToDegrees(latestData.compassDir as string)
     : (latestData.direction ?? 0);
@@ -821,11 +825,11 @@ const WeatherDashboard = () => {
 
           {/* Stat cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-            <StatCard icon={Activity}  title="Temperature" value={latestData.tempC}        unit="°C"   gradient="from-rose-500 to-pink-500" />
-            <StatCard icon={Droplets}  title="Humidity"    value={latestData.humidity}      unit="%"    gradient="from-emerald-500 to-teal-500" />
-            <StatCard icon={Sun}       title="Irradiance"  value={latestData.irradiance}    unit="W/m²" gradient="from-amber-500 to-orange-500" />
-            <StatCard icon={Gauge}     title="Pressure"    value={latestData.pressure}      unit="hPa"  gradient="from-violet-500 to-purple-600" />
-            <StatCard icon={Wind}      title="Wind Speed"  value={latestData.avgWindSpeed}  unit="km/h" gradient="from-sky-500 to-cyan-500" />
+            <StatCard icon={Activity}  title="Temperature"        value={latestData.tempC}          unit="°C"   gradient="from-rose-500 to-pink-500" />
+            <StatCard icon={Droplets}  title="Humidity"           value={latestData.humidity}        unit="%"    gradient="from-emerald-500 to-teal-500" />
+            <StatCard icon={Sun}       title="Irradiance"         value={latestData.irradiance}      unit="W/m²" gradient="from-amber-500 to-orange-500" />
+            <StatCard icon={Gauge}     title="Sea Level Pressure" value={latestSeaLevelPressure}     unit="hPa"  gradient="from-violet-500 to-purple-600" />
+            <StatCard icon={Wind}      title="Wind Speed"         value={latestData.avgWindSpeed}    unit="km/h" gradient="from-sky-500 to-cyan-500" />
             <StatCard
               icon={CloudRain}
               title="Rain"
@@ -886,17 +890,15 @@ const WeatherDashboard = () => {
 
           {/* Charts row 1 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-            <ChartCard title="Temperature"  dataKey="tempC"    color="#f43f5e" unit="°C" icon={Activity} data={filteredData} gradient="from-rose-500 to-pink-500" />
-            <ChartCard title="Humidity"     dataKey="humidity" color="#10b981" unit="%"  icon={Droplets} data={filteredData} gradient="from-emerald-500 to-teal-500" />
+            <ChartCard title="Temperature" dataKey="tempC"    color="#f43f5e" unit="°C" icon={Activity} data={filteredData} gradient="from-rose-500 to-pink-500" />
+            <ChartCard title="Humidity"    dataKey="humidity" color="#10b981" unit="%"  icon={Droplets} data={filteredData} gradient="from-emerald-500 to-teal-500" />
           </div>
 
           {/* Charts row 2 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-            <ChartCard title="Solar Irradiance"      dataKey="irradiance" color="#f59e0b" unit="W/m²" icon={Sun}   data={filteredData} gradient="from-amber-500 to-orange-500" />
-            <ChartCard title="Atmospheric Pressure"  dataKey="pressure"   color="#8b5cf6" unit="hPa"  icon={Gauge} data={filteredData} gradient="from-violet-500 to-purple-600" />
+            <ChartCard title="Solar Irradiance"    dataKey="irradiance"       color="#f59e0b" unit="W/m²" icon={Sun}   data={filteredData} gradient="from-amber-500 to-orange-500" />
+            <ChartCard title="Sea Level Pressure"  dataKey="seaLevelPressure" color="#8b5cf6" unit="hPa"  icon={Gauge} data={filteredData} gradient="from-violet-500 to-purple-600" />
           </div>
-
-          
 
           {/* Wind row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
@@ -923,7 +925,7 @@ const WeatherDashboard = () => {
               <table className="min-w-full">
                 <thead>
                   <tr className={t.tableHead}>
-                    {['Time', 'Temp', 'Humidity', 'Irradiance', 'Wind', 'Direction', 'Pressure', 'Rain'].map(h => (
+                    {['Time', 'Temp', 'Humidity', 'Irradiance', 'Wind', 'Direction', 'Sea Level Pressure', 'Rain'].map(h => (
                       <th key={h} className="px-5 py-3.5 text-left text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -931,6 +933,7 @@ const WeatherDashboard = () => {
                 <tbody className={`divide-y ${t.divider}`}>
                   {weatherData.slice().reverse().slice(0, 5).map((row, i) => {
                     const rowRain = getSmartRain(row.rainRatePerHour as number | undefined, row.time as string);
+                    const rowSeaLevelPressure = getSeaLevelPressure(row.pressure as number | undefined);
                     return (
                       <tr key={i} className={`transition-colors ${t.tableRow}`}>
                         <td className={`px-5 py-3.5 text-xs font-semibold whitespace-nowrap ${t.text}`}>{row.time ? new Date(row.time).toLocaleString() : row._originalTime || '—'}</td>
@@ -939,7 +942,7 @@ const WeatherDashboard = () => {
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.irradiance} W/m²</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.avgWindSpeed} km/h</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.compassDir || `${row.direction}°`}</td>
-                        <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.pressure} hPa</td>
+                        <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{rowSeaLevelPressure !== undefined ? `${rowSeaLevelPressure} hPa` : '—'}</td>
                         <td className={`px-5 py-3.5 text-xs font-semibold ${rowRain > 0 ? (dm ? 'text-blue-400' : 'text-blue-600') : t.textSub}`}>
                           {rainLoading ? '…' : `${rowRain.toFixed(2)} mm`}
                         </td>
