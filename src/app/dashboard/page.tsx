@@ -109,11 +109,12 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
     return rainMap.get(key) ?? 0;
   };
 
-  const getIrradianceForTime = (isoTime?: string): number => {
-  if (!isoTime || irradianceMap.size === 0) return 0;
+  const getIrradianceForTime = (isoTime?: string, sensorValue?: number): number => {
+  if (!isoTime || irradianceMap.size === 0) return sensorValue ?? 0;
   const date = new Date(isoTime);
-  if (isNaN(date.getTime())) return 0;
-  return irradianceMap.get(snapTo15Min(date)) ?? 0;
+  if (isNaN(date.getTime())) return sensorValue ?? 0;
+  const apiValue = irradianceMap.get(snapTo15Min(date));
+  return apiValue !== undefined ? apiValue : (sensorValue ?? 0);
 };
 
   const getSmartRain = (fetchedRain: number | undefined, isoTime?: string): number => {
@@ -394,7 +395,7 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
       ...d,
       openMeteoRain: getSmartRain(d.rainRatePerHour as number | undefined, d.time as string),
       seaLevelPressure: getSeaLevelPressure(d.pressure as number | undefined),
-      irradiance: getIrradianceForTime(d.time as string),
+      irradiance: getIrradianceForTime(d.time as string, d.irradiance as number),
       direction: d.compassDir
         ? compassToDegrees(d.compassDir as string)
         : (d.direction ?? 0),
@@ -772,8 +773,8 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
     { key: '30d', label: '30D' }, { key: 'all', label: 'All' },
   ];
 
-  const latestIrradiance = irradianceLoading ? null : getIrradianceForTime(latestData.time as string);
-
+const latestIrradiance = irradianceLoading ? null 
+  : getIrradianceForTime(latestData.time as string, latestData.irradiance as number);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -975,8 +976,7 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.tempC}°C</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.humidity}%</td>
                        <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>
-  {irradianceLoading ? '…' : `${getIrradianceForTime(row.time as string).toFixed(2)} W/m²`}
-</td>
+{irradianceLoading ? '…' : `${getIrradianceForTime(row.time as string, row.irradiance as number).toFixed(2)} W/m²`}</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.avgWindSpeed} km/h</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.compassDir || `${row.direction}°`}</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{rowSeaLevelPressure !== undefined ? `${rowSeaLevelPressure} hPa` : '—'}</td>

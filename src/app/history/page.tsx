@@ -110,26 +110,7 @@ const parseDateTime = (dateString: string): Date | null => {
   // ← Open-Meteo rain state
   const [rainMap, setRainMap] = useState<Map<string, number>>(new Map());
   const [rainLoading, setRainLoading] = useState(true);
-  // ─── DEBUG: add this temporarily ─────────────────────────────────────────
-useEffect(() => {
-  if (rainLoading) return;
-  console.log('[Rain Debug] rainMap size:', rainMap.size);
-  console.log('[Rain Debug] sample entries:', [...rainMap.entries()].slice(0, 5));
   
-  // Test: manually fetch and log the raw response
-  fetch('/api/rain-data')
-    .then(res => {
-      console.log('[Rain Debug] HTTP status:', res.status);
-      return res.json();
-    })
-    .then(json => {
-      console.log('[Rain Debug] Raw response:', json);
-      console.log('[Rain Debug] minutely_15 keys:', Object.keys(json?.minutely_15 ?? {}));
-      console.log('[Rain Debug] time sample:', json?.minutely_15?.time?.slice(0, 3));
-      console.log('[Rain Debug] precip sample:', json?.minutely_15?.precipitation?.slice(0, 3));
-    })
-    .catch(err => console.error('[Rain Debug] Fetch error:', err));
-}, [rainLoading]);
 
   useEffect(() => {
     const saved = localStorage.getItem('darkMode');
@@ -166,18 +147,28 @@ useEffect(() => {
 
   return () => { cancelled = true; };
 }, [weatherData]);
-
   const getRainForTime = (isoTime?: string): number => {
-    if (!isoTime || rainMap.size === 0) return 0;
-    const date = new Date(isoTime);
-    if (isNaN(date.getTime())) return 0;
-    return rainMap.get(snapTo15Min(date)) ?? 0;
-  };
-  const getIrradianceForTime = (isoTime?: string): number => {
-  if (!isoTime || irradianceMap.size === 0) return 0;
+  if (!isoTime || rainMap.size === 0) return 0;
   const date = new Date(isoTime);
   if (isNaN(date.getTime())) return 0;
-  return irradianceMap.get(snapTo15Min(date)) ?? 0;
+  const apiValue = rainMap.get(snapTo15Min(date));
+  return apiValue ?? 0;
+};
+  const getSmartRain = (fetchedRain: number | undefined, isoTime?: string): number => {
+  const fetched = fetchedRain ?? 0;
+  const apiRain = getRainForTime(isoTime); // ← getRainForTime, not getSmartRain
+
+  if (fetched === apiRain) return fetched;
+  if (Math.abs(fetched - apiRain) > 8) return apiRain;
+  if (fetched === 0 && apiRain !== 0) return apiRain;
+  return fetched;
+};
+  const getIrradianceForTime = (isoTime?: string, sensorValue?: number): number => {
+  if (!isoTime || irradianceMap.size === 0) return sensorValue ?? 0;
+  const date = new Date(isoTime);
+  if (isNaN(date.getTime())) return sensorValue ?? 0;
+  const apiValue = irradianceMap.get(snapTo15Min(date));
+  return apiValue !== undefined ? apiValue : (sensorValue ?? 0);
 };
 
   const SEA_LEVEL_OFFSET = 19.44;
@@ -303,11 +294,12 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
         row.time ? `"${new Date(row.time).toISOString().replace('T', ' ').slice(0, 19)}"` : 'N/A',
         row.tempC        ?? 'N/A',
         row.humidity     ?? 'N/A',
-        getIrradianceForTime(row.time as string).toFixed(2),
+        getIrradianceForTime(row.time as string, row.irradiance as number).toFixed(2),
+
         row.avgWindSpeed ?? 'N/A',
         row.compassDir || row.direction || 'N/A',
         getSeaLevelPressure(row.pressure as number | undefined) ?? 'N/A',
-        getRainForTime(row.time as string).toFixed(2),
+        getSmartRain(row.rainRatePerHour as number | undefined, row.time as string).toFixed(2),
       ].join(','))
     ].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -367,7 +359,8 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
     { key: 'humidity',     label: 'Humidity',    render: (row) => row.humidity !== undefined ? `${row.humidity}%` : '—' },
     { key: 'irradiance', label: 'Irradiance', render: (row) => {
   if (irradianceLoading) return <span className={dm ? 'text-gray-500' : 'text-gray-400'}>…</span>;
-  return `${getIrradianceForTime(row.time as string).toFixed(2)} W/m²`;
+  return `${getIrradianceForTime(row.time as string, row.irradiance as number).toFixed(2)} W/m²`;
+
 }},
     { key: 'avgWindSpeed', label: 'Wind',        render: (row) => row.avgWindSpeed !== undefined ? `${row.avgWindSpeed} km/h` : '—' },
     { key: 'compassDir',   label: 'Direction',   render: (row) => row.compassDir || (row.direction ? `${row.direction}°` : '—') },
@@ -378,7 +371,8 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
       label: 'Rain',
       render: (row) => {
         if (rainLoading) return <span className={dm ? 'text-gray-500' : 'text-gray-400'}>…</span>;
-        const mm = getRainForTime(row.time as string);
+        const mm = getSmartRain(row.rainRatePerHour as number | undefined, row.time as string);
+
         return (
           <span className={mm > 0
             ? `font-bold ${dm ? 'text-blue-400' : 'text-blue-600'}`
