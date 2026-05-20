@@ -17,35 +17,38 @@ interface WeatherDataPoint {
 
 
 
-async function fetchOpenMeteoRain(data: WeatherDataPoint[]): Promise<Map<string, number>> {
-  // Find the oldest and newest timestamps in the station data
+async function fetchOpenMeteoData(data: WeatherDataPoint[]): Promise<{
+  rainMap: Map<string, number>;
+  irradianceMap: Map<string, number>;
+}> {
   const times = data
     .map(d => d.time ? new Date(d.time).getTime() : NaN)
     .filter(t => !isNaN(t));
 
-  if (times.length === 0) return new Map();
+  if (times.length === 0) return { rainMap: new Map(), irradianceMap: new Map() };
 
   const fmt = (d: Date) => d.toISOString().split('T')[0];
   const startDate = fmt(new Date(Math.min(...times)));
-  const endDate = fmt(new Date()); // always fetch up to today
+  const endDate = fmt(new Date());
 
   const res = await fetch(`/api/rain-data?start=${startDate}&end=${endDate}`);
   if (!res.ok) throw new Error(`Rain API error: ${res.status}`);
   const json = await res.json();
 
-  const timestamps: string[] = json?.hourly?.time ?? [];
-  const values: number[] = json?.hourly?.precipitation ?? [];
+  const timestamps: string[] = json?.minutely_15?.time ?? [];
+  const precip: number[]     = json?.minutely_15?.precipitation ?? [];
+  const irradiance: number[] = json?.minutely_15?.shortwave_radiation ?? [];
 
-  const map = new Map<string, number>();
+  const rainMap       = new Map<string, number>();
+  const irradianceMap = new Map<string, number>();
+
   timestamps.forEach((t, i) => {
-    const mmPerSlot = (values[i] ?? 0) / 4;
-    map.set(`${t.slice(0, 14)}00`, mmPerSlot);
-    map.set(`${t.slice(0, 14)}15`, mmPerSlot);
-    map.set(`${t.slice(0, 14)}30`, mmPerSlot);
-    map.set(`${t.slice(0, 14)}45`, mmPerSlot);
-  });
+  const key = snapTo15Min(new Date(t + ':00Z')); // ← force UTC parsing
+  rainMap.set(key, precip[i] ?? 0);
+  irradianceMap.set(key, irradiance[i] ?? 0);
+});
 
-  return map;
+  return { rainMap, irradianceMap };
 }
 function snapTo15Min(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -70,6 +73,39 @@ const HistoryPage = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [irradianceMap, setIrradianceMap] = useState<Map<string, number>>(new Map());
+const [irradianceLoading, setIrradianceLoading] = useState(true);
+
+const parseDateTime = (dateString: string): Date | null => {
+    if (!dateString || dateString === 'N/A' || dateString === '') return null;
+    const formats = [
+      () => new Date(dateString),
+      () => {
+        const match = dateString.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+        if (match) return new Date(Date.UTC(+match[1], +match[2]-1, +match[3], +match[4], +match[5], +match[6]));
+        return null;
+      },
+      () => {
+        const match = dateString.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+        if (match) return new Date(Date.UTC(+match[3], +match[2]-1, +match[1], +match[4], +match[5], +match[6]));
+        return null;
+      },
+      () => {
+        const ts = parseInt(dateString);
+        if (!isNaN(ts) && ts > 1000000000000) return new Date(ts);
+        return null;
+      },
+      () => {
+        const ts = parseInt(dateString);
+        if (!isNaN(ts) && ts > 1000000000 && ts < 10000000000) return new Date(ts * 1000);
+        return null;
+      },
+    ];
+    for (const parser of formats) {
+      try { const d = parser(); if (d && !isNaN(d.getTime())) return d; } catch {}
+    }
+    return null;
+  };
 
   // ← Open-Meteo rain state
   const [rainMap, setRainMap] = useState<Map<string, number>>(new Map());
@@ -108,14 +144,26 @@ useEffect(() => {
 
   // ← Fetch Open-Meteo rain once on mount
   useEffect(() => {
-  if (weatherData.length === 0) return; // wait for station data first
-  
+  if (weatherData.length === 0) return;
   let cancelled = false;
   setRainLoading(true);
-  fetchOpenMeteoRain(weatherData)
-    .then((map) => { if (!cancelled) setRainMap(map); })
-    .catch((err) => console.error('[Open-Meteo]', err))
-    .finally(() => { if (!cancelled) setRainLoading(false); });
+  setIrradianceLoading(true);
+
+  fetchOpenMeteoData(weatherData)
+    .then(({ rainMap, irradianceMap }) => {
+      if (!cancelled) {
+        setRainMap(rainMap);
+        setIrradianceMap(irradianceMap);
+      }
+    })
+    .catch(err => console.error('[Open-Meteo]', err))
+    .finally(() => {
+      if (!cancelled) {
+        setRainLoading(false);
+        setIrradianceLoading(false);
+      }
+    });
+
   return () => { cancelled = true; };
 }, [weatherData]);
 
@@ -125,6 +173,12 @@ useEffect(() => {
     if (isNaN(date.getTime())) return 0;
     return rainMap.get(snapTo15Min(date)) ?? 0;
   };
+  const getIrradianceForTime = (isoTime?: string): number => {
+  if (!isoTime || irradianceMap.size === 0) return 0;
+  const date = new Date(isoTime);
+  if (isNaN(date.getTime())) return 0;
+  return irradianceMap.get(snapTo15Min(date)) ?? 0;
+};
 
   const SEA_LEVEL_OFFSET = 19.44;
 const getSeaLevelPressure = (pressure: number | undefined): number | undefined => {
@@ -172,41 +226,51 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
   useEffect(() => { applyDateFilter(); }, [startDate, endDate, weatherData]);
 
   const fetchWeatherData = async (container: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/weather-data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ containerName: container, latestOnly: false, page: 1, pageSize: 99999 })
-      });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      if (!data?.data?.length) throw new Error('No weather data found');
+  setLoading(true);
+  setError(null);
+  try {
+    const response = await fetch('/api/weather-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ containerName: container, latestOnly: false, page: 1, pageSize: 99999 })
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    if (!data?.data?.length) throw new Error('No weather data found');
 
-      // ✅ Filter out invalid/sentinel blobs
-      const validData = data.data.filter((item: WeatherDataPoint) => {
-        const isInvalid =
-          item.tempC === -999 &&
-          item.humidity === -999 &&
-          (item.pressure === 0 || item.pressure === undefined) &&
-          (item.avgWindSpeed === 0 || item.avgWindSpeed === undefined);
-        return !isInvalid;
-      });
+    // ✅ Parse timestamps to proper UTC ISO strings (same as dashboard)
+    const processedData = data.data.map((item: any) => {
+      const timeValue = item.time || item.timestamp || null;
+      const parsedDate = timeValue ? parseDateTime(String(timeValue)) : null;
+      return {
+        ...item,
+        time: parsedDate ? parsedDate.toISOString() : timeValue,
+      };
+    });
 
-      if (!validData.length) throw new Error('No valid weather data found');
+    // ✅ Filter out invalid/sentinel blobs
+    const validData = processedData.filter((item: WeatherDataPoint) => {
+      const isInvalid =
+        item.tempC === -999 &&
+        item.humidity === -999 &&
+        (item.pressure === 0 || item.pressure === undefined) &&
+        (item.avgWindSpeed === 0 || item.avgWindSpeed === undefined);
+      return !isInvalid;
+    });
 
-      const sortedData = validData.sort((a: WeatherDataPoint, b: WeatherDataPoint) =>
-        new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime()
-      );
-      setWeatherData(sortedData);
-      setFilteredData(sortedData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch weather data');
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (!validData.length) throw new Error('No valid weather data found');
+
+    const sortedData = validData.sort((a: WeatherDataPoint, b: WeatherDataPoint) =>
+      new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime()
+    );
+    setWeatherData(sortedData);
+    setFilteredData(sortedData);
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Failed to fetch weather data');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const applyDateFilter = () => {
     if (!startDate && !endDate) { setFilteredData(weatherData); return; }
@@ -239,7 +303,7 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
         row.time ? `"${new Date(row.time).toISOString().replace('T', ' ').slice(0, 19)}"` : 'N/A',
         row.tempC        ?? 'N/A',
         row.humidity     ?? 'N/A',
-        row.irradiance   ?? 'N/A',
+        getIrradianceForTime(row.time as string).toFixed(2),
         row.avgWindSpeed ?? 'N/A',
         row.compassDir || row.direction || 'N/A',
         getSeaLevelPressure(row.pressure as number | undefined) ?? 'N/A',
@@ -301,7 +365,10 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
     { key: 'time',         label: 'Time',        render: (row) => row.time ? new Date(row.time).toLocaleString() : '—' },
     { key: 'tempC',        label: 'Temp',        render: (row) => row.tempC !== undefined ? `${row.tempC}°C` : '—' },
     { key: 'humidity',     label: 'Humidity',    render: (row) => row.humidity !== undefined ? `${row.humidity}%` : '—' },
-    { key: 'irradiance',   label: 'Irradiance',  render: (row) => row.irradiance !== undefined ? `${row.irradiance} W/m²` : '—' },
+    { key: 'irradiance', label: 'Irradiance', render: (row) => {
+  if (irradianceLoading) return <span className={dm ? 'text-gray-500' : 'text-gray-400'}>…</span>;
+  return `${getIrradianceForTime(row.time as string).toFixed(2)} W/m²`;
+}},
     { key: 'avgWindSpeed', label: 'Wind',        render: (row) => row.avgWindSpeed !== undefined ? `${row.avgWindSpeed} km/h` : '—' },
     { key: 'compassDir',   label: 'Direction',   render: (row) => row.compassDir || (row.direction ? `${row.direction}°` : '—') },
     // ✅ Real pressure from blob
