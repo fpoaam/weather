@@ -40,6 +40,7 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
 async function fetchOpenMeteoData(startDate: string, endDate: string): Promise<{
   rainMap: Map<string, number>;
   irradianceMap: Map<string, number>;
+  windMap: Map<string, number>;
 }> {
   const res = await fetch(`/api/rain-data?start=${startDate}&end=${endDate}`);
   if (!res.ok) throw new Error(`Open-Meteo API error: ${res.status}`);
@@ -48,17 +49,20 @@ async function fetchOpenMeteoData(startDate: string, endDate: string): Promise<{
   const timestamps: string[]  = json?.minutely_15?.time ?? [];
   const precip: number[]      = json?.minutely_15?.precipitation ?? [];
   const irradiance: number[]  = json?.minutely_15?.shortwave_radiation ?? [];
+  const windSpeed: number[]   = json?.minutely_15?.wind_speed_10m ?? [];
 
   const rainMap       = new Map<string, number>();
   const irradianceMap = new Map<string, number>();
+  const windMap       = new Map<string, number>();
 
   timestamps.forEach((t, i) => {
-  const key = snapTo15Min(new Date(t + ':00Z')); // ← force UTC parsing
-  rainMap.set(key, precip[i] ?? 0);
-  irradianceMap.set(key, irradiance[i] ?? 0);
-});
+    const key = snapTo15Min(new Date(t + ':00Z'));
+    rainMap.set(key, precip[i] ?? 0);
+    irradianceMap.set(key, irradiance[i] ?? 0);
+    windMap.set(key, windSpeed[i] ?? 0);
+  });
 
-  return { rainMap, irradianceMap };
+  return { rainMap, irradianceMap, windMap };
 }
 
 function snapTo15Min(date: Date): string {
@@ -98,6 +102,7 @@ const WeatherDashboard = () => {
   const dm = mounted && darkMode;
   const [irradianceMap, setIrradianceMap] = useState<Map<string, number>>(new Map());
 const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
+const [windMap, setWindMap] = useState<Map<string, number>>(new Map());
 
   // ─── Smart rain logic ─────────────────────────────────────────────────────
 
@@ -132,7 +137,15 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
     return fetched;
   };
 
-  // ─── Fetch Open-Meteo rain when weatherData changes ───────────────────────
+const getWindSpeedForTime = (isoTime?: string, sensorValue?: number): number => {
+  if (!isoTime || windMap.size === 0) return sensorValue ?? 0;
+  const date = new Date(isoTime);
+  if (isNaN(date.getTime())) return sensorValue ?? 0;
+  const apiValue = windMap.get(snapTo15Min(date));
+  return apiValue !== undefined ? apiValue : (sensorValue ?? 0);
+};
+
+
 
   useEffect(() => {
   if (weatherData.length === 0) return;
@@ -151,12 +164,13 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
   const end = fmt(new Date());
 
   fetchOpenMeteoData(start, end)
-    .then(({ rainMap, irradianceMap }) => {
-      if (!cancelled) {
-        setRainMap(rainMap);
-        setIrradianceMap(irradianceMap);
-      }
-    })
+    .then(({ rainMap, irradianceMap, windMap }) => {
+  if (!cancelled) {
+    setRainMap(rainMap);
+    setIrradianceMap(irradianceMap);
+    setWindMap(windMap);
+  }
+})
     .catch(err => console.error('[Open-Meteo]', err))
     .finally(() => {
       if (!cancelled) {
@@ -401,6 +415,7 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
       openMeteoRain: getSmartRain(d.rainRatePerHour as number | undefined, d.time as string),
       seaLevelPressure: getSeaLevelPressure(d.pressure as number | undefined),
       irradiance: getIrradianceForTime(d.time as string, d.irradiance as number),
+      avgWindSpeed: getWindSpeedForTime(d.time as string, d.avgWindSpeed as number),
       direction: d.compassDir
         ? compassToDegrees(d.compassDir as string)
         : (d.direction ?? 0),
@@ -870,7 +885,7 @@ const latestIrradiance = irradianceLoading ? null
   gradient="from-amber-500 to-orange-500"
 />
             <StatCard icon={Gauge}     title="Pressure" value={latestSeaLevelPressure}     unit="hPa"  gradient="from-violet-500 to-purple-600" />
-            <StatCard icon={Wind}      title="Wind Speed"         value={latestData.avgWindSpeed}    unit="km/h" gradient="from-sky-500 to-cyan-500" />
+            <StatCard icon={Wind} title="Wind Speed" value={windMap.size === 0 ? '…' : getWindSpeedForTime(latestData.time as string, latestData.avgWindSpeed as number).toFixed(2)} unit="km/h" gradient="from-sky-500 to-cyan-500" />
             <StatCard
               icon={CloudRain}
               title="Rain"
@@ -982,7 +997,9 @@ const latestIrradiance = irradianceLoading ? null
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.humidity}%</td>
                        <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>
 {irradianceLoading ? '…' : `${getIrradianceForTime(row.time as string, row.irradiance as number).toFixed(2)} W/m²`}</td>
-                        <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.avgWindSpeed} km/h</td>
+                       <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>
+  {getWindSpeedForTime(row.time as string, row.avgWindSpeed as number).toFixed(2)} km/h
+</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{row.compassDir || `${row.direction}°`}</td>
                         <td className={`px-5 py-3.5 text-xs ${t.textSub}`}>{rowSeaLevelPressure !== undefined ? `${rowSeaLevelPressure} hPa` : '—'}</td>
                         <td className={`px-5 py-3.5 text-xs font-semibold ${rowRain > 0 ? (dm ? 'text-blue-400' : 'text-blue-600') : t.textSub}`}>

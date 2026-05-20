@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=25.555582&longitude=56.080717` +
     `&start_date=${startDate}&end_date=${endDate}` +
-    `&minutely_15=precipitation,shortwave_radiation` +
+    `&minutely_15=precipitation,shortwave_radiation,wind_speed_10m` +
     `&timezone=UTC`;
 
   const res = await fetch(url, { next: { revalidate: 900 } });

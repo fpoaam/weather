@@ -20,12 +20,13 @@ interface WeatherDataPoint {
 async function fetchOpenMeteoData(data: WeatherDataPoint[]): Promise<{
   rainMap: Map<string, number>;
   irradianceMap: Map<string, number>;
+  windMap: Map<string, number>;
 }> {
   const times = data
     .map(d => d.time ? new Date(d.time).getTime() : NaN)
     .filter(t => !isNaN(t));
 
-  if (times.length === 0) return { rainMap: new Map(), irradianceMap: new Map() };
+  if (times.length === 0) return { rainMap: new Map(), irradianceMap: new Map(), windMap: new Map() };
 
   const fmt = (d: Date) => d.toISOString().split('T')[0];
   const startDate = fmt(new Date(Math.min(...times)));
@@ -41,14 +42,19 @@ async function fetchOpenMeteoData(data: WeatherDataPoint[]): Promise<{
 
   const rainMap       = new Map<string, number>();
   const irradianceMap = new Map<string, number>();
+  const windSpeed: number[] = json?.minutely_15?.wind_speed_10m ?? []
+  const windMap = new Map<string, number>();
+
 
   timestamps.forEach((t, i) => {
-  const key = snapTo15Min(new Date(t + ':00Z')); // ← force UTC parsing
+  const key = snapTo15Min(new Date(t + ':00Z'));
   rainMap.set(key, precip[i] ?? 0);
   irradianceMap.set(key, irradiance[i] ?? 0);
+  windMap.set(key, windSpeed[i] ?? 0);
 });
 
-  return { rainMap, irradianceMap };
+  return { rainMap, irradianceMap, windMap };
+
 }
 function snapTo15Min(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -75,6 +81,7 @@ const HistoryPage = () => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [irradianceMap, setIrradianceMap] = useState<Map<string, number>>(new Map());
 const [irradianceLoading, setIrradianceLoading] = useState(true);
+const [windMap, setWindMap] = useState<Map<string, number>>(new Map());
 
 const parseDateTime = (dateString: string): Date | null => {
     if (!dateString || dateString === 'N/A' || dateString === '') return null;
@@ -111,6 +118,13 @@ const parseDateTime = (dateString: string): Date | null => {
   const [rainMap, setRainMap] = useState<Map<string, number>>(new Map());
   const [rainLoading, setRainLoading] = useState(true);
   
+  const getWindSpeedForTime = (isoTime?: string, sensorValue?: number): number => {
+  if (!isoTime || windMap.size === 0) return sensorValue ?? 0;
+  const date = new Date(isoTime);
+  if (isNaN(date.getTime())) return sensorValue ?? 0;
+  const apiValue = windMap.get(snapTo15Min(date));
+  return apiValue !== undefined ? apiValue : (sensorValue ?? 0);
+};
 
   useEffect(() => {
     const saved = localStorage.getItem('darkMode');
@@ -131,12 +145,13 @@ const parseDateTime = (dateString: string): Date | null => {
   setIrradianceLoading(true);
 
   fetchOpenMeteoData(weatherData)
-    .then(({ rainMap, irradianceMap }) => {
-      if (!cancelled) {
-        setRainMap(rainMap);
-        setIrradianceMap(irradianceMap);
-      }
-    })
+    .then(({ rainMap, irradianceMap, windMap }) => {
+  if (!cancelled) {
+    setRainMap(rainMap);
+    setIrradianceMap(irradianceMap);
+    setWindMap(windMap);
+  }
+})
     .catch(err => console.error('[Open-Meteo]', err))
     .finally(() => {
       if (!cancelled) {
@@ -301,7 +316,7 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
         row.humidity     ?? 'N/A',
         getIrradianceForTime(row.time as string, row.irradiance as number).toFixed(2),
 
-        row.avgWindSpeed ?? 'N/A',
+        getWindSpeedForTime(row.time as string, row.avgWindSpeed as number).toFixed(2),
         row.compassDir || row.direction || 'N/A',
         getSeaLevelPressure(row.pressure as number | undefined) ?? 'N/A',
         getSmartRain(row.rainRatePerHour as number | undefined, row.time as string).toFixed(2),
@@ -367,7 +382,10 @@ const getSeaLevelPressure = (pressure: number | undefined): number | undefined =
   return `${getIrradianceForTime(row.time as string, row.irradiance as number).toFixed(2)} W/m²`;
 
 }},
-    { key: 'avgWindSpeed', label: 'Wind',        render: (row) => row.avgWindSpeed !== undefined ? `${row.avgWindSpeed} km/h` : '—' },
+    { key: 'avgWindSpeed', label: 'Wind', render: (row) => {
+  if (windMap.size === 0) return <span className={dm ? 'text-gray-500' : 'text-gray-400'}>…</span>;
+  return `${getWindSpeedForTime(row.time as string, row.avgWindSpeed as number).toFixed(2)} km/h`;
+}},
     { key: 'compassDir',   label: 'Direction',   render: (row) => row.compassDir || (row.direction ? `${row.direction}°` : '—') },
     // ✅ Real pressure from blob
     { key: 'pressure', label: 'Pressure', render: (row) => { const slp = getSeaLevelPressure(row.pressure as number | undefined); return slp !== undefined ? `${slp} hPa` : '—'; } },
