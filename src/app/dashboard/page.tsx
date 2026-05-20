@@ -114,7 +114,12 @@ const [irradianceLoading, setIrradianceLoading] = useState<boolean>(true);
   const date = new Date(isoTime);
   if (isNaN(date.getTime())) return sensorValue ?? 0;
   const apiValue = irradianceMap.get(snapTo15Min(date));
-  return apiValue !== undefined ? apiValue : (sensorValue ?? 0);
+  
+  if (apiValue === undefined) return sensorValue ?? 0;
+  
+  const sensor = sensorValue ?? 0;
+  if (Math.abs(apiValue - sensor) > 100) return apiValue;
+  return sensor;
 };
 
   const getSmartRain = (fetchedRain: number | undefined, isoTime?: string): number => {
